@@ -6,6 +6,7 @@ import {CoFheTest} from "@fhenixprotocol/cofhe-mock-contracts/CoFheTest.sol";
 import {FHE, InEuint256, InEuint16, euint256, euint16} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
 
 import {PhantomSwap} from "../../src/core/PhantomSwap.sol";
+import {RouteEngine} from "../../src/fhe/RouteEngine.sol";
 import {OrderParams, OrderStatus, Order} from "../../src/types/PhantomOrder.sol";
 import {IPhantomAdapter} from "../../src/interfaces/IPhantomAdapter.sol";
 import {IZcashBridge} from "../../src/interfaces/IZcashBridge.sol";
@@ -53,7 +54,7 @@ contract PhantomSwapTest is BaseTest, CoFheTest {
     function testExecuteOrderWithManualPlan() public {
         bytes32 orderHash = phantomSwap.submitOrder(_defaultOrderParams());
 
-        adapter.setExecution(_asCipher(123 ether), bytes(""));
+        adapter.setExecution(_adapterCipher(adapter, 123 ether), bytes(""));
 
         PhantomSwap.ExecutionPlan memory plan = PhantomSwap.ExecutionPlan({
             adapter: address(adapter),
@@ -80,7 +81,7 @@ contract PhantomSwapTest is BaseTest, CoFheTest {
     function testExecuteTriggersZcashSettlement() public {
         bytes32 orderHash = phantomSwap.submitOrder(_defaultOrderParams());
 
-        adapter.setExecution(_asCipher(321 ether), bytes("bridge-data"));
+        adapter.setExecution(_adapterCipher(adapter, 321 ether), bytes("bridge-data"));
         phantomSwap.setZcashBridge(bridge);
 
         PhantomSwap.ExecutionPlan memory plan = PhantomSwap.ExecutionPlan({
@@ -104,6 +105,48 @@ contract PhantomSwapTest is BaseTest, CoFheTest {
         );
     }
 
+    function testExecuteOrderViaRouteEngineSelectsBestAdapter() public {
+        MockAdapter secondary = new MockAdapter();
+        phantomSwap.setAdapter(address(secondary), true);
+
+        RouteEngine engine = new RouteEngine(address(this));
+        engine.registerAdapter(address(adapter));
+        engine.registerAdapter(address(secondary));
+        phantomSwap.setRouteEngine(engine);
+
+        adapter.setQuoteCipher(_adapterCipher(adapter, 80 ether), bytes32("route-a"), bytes("data-a"));
+        adapter.setExecution(_adapterCipher(adapter, 90 ether), bytes(""));
+
+        secondary.setQuoteCipher(_adapterCipher(secondary, 120 ether), bytes32("route-b"), bytes("data-b"));
+        secondary.setExecution(_adapterCipher(secondary, 130 ether), bytes(""));
+
+        bytes32 orderHash = phantomSwap.submitOrder(_defaultOrderParams());
+
+        RouteEngine.AdapterHint[] memory hints = new RouteEngine.AdapterHint[](2);
+        hints[0] = RouteEngine.AdapterHint({
+            adapter: address(adapter),
+            data: bytes("data-a"),
+            plaintextScore: 80 ether
+        });
+        hints[1] = RouteEngine.AdapterHint({
+            adapter: address(secondary),
+            data: bytes("data-b"),
+            plaintextScore: 120 ether
+        });
+
+        vm.prank(executor);
+        euint256 amountOut = phantomSwap.executeOrder(orderHash, abi.encode(hints));
+
+        assertEq(uint8(phantomSwap.getOrderStatus(orderHash)), uint8(OrderStatus.Executed));
+        assertEq(secondary.lastCaller(), address(phantomSwap), "secondary adapter not called");
+        assertEq(secondary.lastOrderHash(), orderHash, "secondary adapter order mismatch");
+        assertEq(
+            euint256.unwrap(amountOut),
+            euint256.unwrap(secondary.configuredAmountOut()),
+            "route engine selected wrong amount"
+        );
+    }
+
     function _defaultOrderParams() internal returns (OrderParams memory params) {
         params = OrderParams({
             tokenIn: address(0x1111),
@@ -121,23 +164,40 @@ contract PhantomSwapTest is BaseTest, CoFheTest {
         InEuint256 memory enc = createInEuint256(plaintext, address(this));
         return FHE.asEuint256(enc);
     }
+
+    function _adapterCipher(MockAdapter target, uint256 value) internal returns (InEuint256 memory) {
+        return createInEuint256(value, address(target));
+    }
 }
 
 contract MockAdapter is IPhantomAdapter {
     euint256 private _encryptedAmountOut;
     bytes private _settlementData;
 
+    euint256 private _quoteAmountOut;
+    bytes32 private _quoteRouteId;
+    bytes private _quoteAdapterData;
+
     bytes32 private _lastOrderHash;
     bytes private _lastAdapterData;
     address private _lastCaller;
 
-    function setExecution(euint256 encryptedAmountOut, bytes memory settlementData) external {
-        _encryptedAmountOut = encryptedAmountOut;
+    function setExecution(InEuint256 calldata encryptedAmountOut, bytes memory settlementData) external {
+        _encryptedAmountOut = FHE.asEuint256(encryptedAmountOut);
         _settlementData = settlementData;
     }
 
-    function requestQuote(bytes32, Order calldata, bytes calldata) external pure returns (Quote memory) {
-        revert("MockAdapter: quotes not implemented");
+    function setQuoteCipher(InEuint256 calldata quote, bytes32 routeId, bytes memory adapterData) external {
+        _quoteAmountOut = FHE.asEuint256(quote);
+        _quoteRouteId = routeId;
+        _quoteAdapterData = adapterData;
+    }
+
+    function requestQuote(bytes32 orderHash, Order calldata, bytes calldata) external returns (Quote memory quote) {
+        _lastOrderHash = orderHash;
+        FHE.allow(_quoteAmountOut, msg.sender);
+        FHE.allowThis(_quoteAmountOut);
+        quote = Quote({routeId: _quoteRouteId, encryptedAmountOut: _quoteAmountOut, adapterData: _quoteAdapterData});
     }
 
     function executeSwap(bytes32 orderHash, Order calldata, bytes calldata adapterData)

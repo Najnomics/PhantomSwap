@@ -3,7 +3,7 @@ pragma solidity ^0.8.26;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-import {FHE, euint256, ebool} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
+import {FHE, euint256} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
 
 import {IRouteEngine} from "../interfaces/IRouteEngine.sol";
 import {IPhantomAdapter} from "../interfaces/IPhantomAdapter.sol";
@@ -19,6 +19,7 @@ contract RouteEngine is IRouteEngine, Ownable {
     struct AdapterHint {
         address adapter;
         bytes data;
+        uint256 plaintextScore;
     }
 
     error AdapterAlreadyRegistered(address adapter);
@@ -84,18 +85,22 @@ contract RouteEngine is IRouteEngine, Ownable {
         address[] memory adaptersSnapshot = _adapters;
         if (adaptersSnapshot.length == 0) revert NoActiveAdapters();
 
-        AdapterHint[] memory hints = extraData.length != 0 ? abi.decode(extraData, (AdapterHint[])) : new AdapterHint[](0);
+        AdapterHint[] memory hints =
+            extraData.length != 0 ? abi.decode(extraData, (AdapterHint[])) : new AdapterHint[](0);
 
         bool found;
+        uint256 bestScore;
         for (uint256 i = 0; i < adaptersSnapshot.length; ++i) {
             address adapterAddr = adaptersSnapshot[i];
             if (!_configs[adapterAddr].enabled) continue;
 
-            bytes memory hintData = _hintFor(adapterAddr, hints);
+            (bytes memory hintData, uint256 hintScore) = _hintFor(adapterAddr, hints);
             IPhantomAdapter.Quote memory quote = IPhantomAdapter(adapterAddr).requestQuote(orderHash, order, hintData);
 
-            // Ensure the route engine can continue operating on the returned ciphertext.
             FHE.allowThis(quote.encryptedAmountOut);
+
+            uint256 comparisonMetric =
+                hintScore != 0 ? hintScore : euint256.unwrap(quote.encryptedAmountOut);
 
             if (!found) {
                 selection.adapter = adapterAddr;
@@ -103,16 +108,16 @@ contract RouteEngine is IRouteEngine, Ownable {
                 selection.adapterData = hintData.length != 0 ? hintData : quote.adapterData;
                 selection.encryptedQuote = quote.encryptedAmountOut;
                 found = true;
+                bestScore = comparisonMetric;
                 continue;
             }
 
-            ebool isBetter = FHE.gt(quote.encryptedAmountOut, selection.encryptedQuote);
-            uint256 decision = FHE.decrypt(isBetter);
-            if (decision != 0) {
+            if (comparisonMetric > bestScore) {
                 selection.adapter = adapterAddr;
                 selection.quote = quote;
                 selection.adapterData = hintData.length != 0 ? hintData : quote.adapterData;
                 selection.encryptedQuote = quote.encryptedAmountOut;
+                bestScore = comparisonMetric;
             }
         }
 
@@ -122,13 +127,17 @@ contract RouteEngine is IRouteEngine, Ownable {
         FHE.allow(selection.encryptedQuote, msg.sender);
     }
 
-    function _hintFor(address adapter, AdapterHint[] memory hints) internal pure returns (bytes memory data) {
+    function _hintFor(address adapter, AdapterHint[] memory hints)
+        internal
+        pure
+        returns (bytes memory data, uint256 score)
+    {
         for (uint256 i = 0; i < hints.length; ++i) {
             if (hints[i].adapter == adapter) {
-                return hints[i].data;
+                return (hints[i].data, hints[i].plaintextScore);
             }
         }
-        return "";
+        return ("", 0);
     }
 }
 

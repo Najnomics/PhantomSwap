@@ -94,6 +94,9 @@ contract PhantomSwap is Ownable, ReentrancyGuard {
         Order memory orderData = params.toOrder(msg.sender);
         OrderPermissions.grantOnSubmission(orderData, msg.sender);
         _orders[orderHash] = orderData;
+        if (address(routeEngine) != address(0)) {
+            OrderPermissions.grantForRouting(_orders[orderHash], address(routeEngine));
+        }
 
         emit OrderSubmitted(orderHash, msg.sender, params.tokenIn, params.tokenOut, params.deadline);
     }
