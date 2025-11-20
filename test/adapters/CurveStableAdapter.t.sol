@@ -9,6 +9,8 @@ import {FHE, InEuint256, InEuint16, euint256} from "@fhenixprotocol/cofhe-contra
 import {CurveStableAdapter} from "../../src/adapters/CurveStableAdapter.sol";
 import {Order, OrderStatus} from "../../src/types/PhantomOrder.sol";
 import {IPhantomAdapter} from "../../src/interfaces/IPhantomAdapter.sol";
+import {ICurveDecryptionOracle} from "../../src/interfaces/ICurveDecryptionOracle.sol";
+import {CurveDecryptionOracle} from "../../src/oracle/CurveDecryptionOracle.sol";
 
 import {MockCurvePool} from "../mocks/curve/MockCurvePool.sol";
 import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
@@ -18,6 +20,7 @@ contract CurveStableAdapterTest is Test, CoFheTest {
     MockCurvePool internal pool;
     MockERC20 internal tokenIn;
     MockERC20 internal tokenOut;
+    CurveDecryptionOracle internal oracle;
 
     address internal phantomSwap = address(this);
 
@@ -30,12 +33,26 @@ contract CurveStableAdapterTest is Test, CoFheTest {
 
         pool = new MockCurvePool(address(tokenIn), address(tokenOut));
         pool.setRate(1_050_000_000_000_000_000); // 1.05x
+        oracle = new CurveDecryptionOracle(address(this));
+        oracle.setRelayer(address(this), true);
 
-        adapter = new CurveStableAdapter(phantomSwap, address(pool), 0, 1);
+        adapter = new CurveStableAdapter(phantomSwap, address(oracle), address(pool), 0, 1);
     }
 
     function testRequestQuoteReturnsEncryptedDy() public {
         Order memory order = _buildOrder(100 ether, 95 ether, 100);
+
+        bytes32 orderHash = bytes32("order");
+
+        oracle.submitDecryption(
+            orderHash,
+            ICurveDecryptionOracle.DecryptedOrder({
+                amountIn: 100 ether,
+                minAmountOut: 95 ether,
+                slippageBps: 100,
+                deadline: order.deadline
+            })
+        );
 
         vm.prank(phantomSwap);
         IPhantomAdapter.Quote memory quote = adapter.requestQuote(bytes32("order"), order, bytes(""));
@@ -54,6 +71,16 @@ contract CurveStableAdapterTest is Test, CoFheTest {
 
         Order memory order = _buildOrder(amountIn, 190 ether, 50);
         bytes32 orderHash = keccak256("curve-order");
+
+        oracle.submitDecryption(
+            orderHash,
+            ICurveDecryptionOracle.DecryptedOrder({
+                amountIn: amountIn,
+                minAmountOut: 190 ether,
+                slippageBps: 50,
+                deadline: order.deadline
+            })
+        );
 
         vm.prank(phantomSwap);
         IPhantomAdapter.ExecutionResponse memory response = adapter.executeSwap(orderHash, order, bytes(""));

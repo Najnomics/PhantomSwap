@@ -8,6 +8,8 @@ import {FHE, InEuint256, InEuint16, euint256, euint16} from "@fhenixprotocol/cof
 import {PhantomSwap} from "../../src/core/PhantomSwap.sol";
 import {RouteEngine} from "../../src/fhe/RouteEngine.sol";
 import {CurveStableAdapter} from "../../src/adapters/CurveStableAdapter.sol";
+import {CurveDecryptionOracle} from "../../src/oracle/CurveDecryptionOracle.sol";
+import {ICurveDecryptionOracle} from "../../src/interfaces/ICurveDecryptionOracle.sol";
 import {MockCurvePool} from "../mocks/curve/MockCurvePool.sol";
 import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
 import {OrderParams, OrderStatus, Order} from "../../src/types/PhantomOrder.sol";
@@ -165,7 +167,10 @@ contract PhantomSwapTest is BaseTest, CoFheTest {
         MockCurvePool pool = new MockCurvePool(address(tokenA), address(tokenB));
         pool.setRate(1_050_000_000_000_000_000); // 1.05x
 
-        CurveStableAdapter curveAdapter = new CurveStableAdapter(address(phantomSwap), address(pool), 0, 1);
+        CurveDecryptionOracle oracle = new CurveDecryptionOracle(address(this));
+        oracle.setRelayer(address(this), true);
+
+        CurveStableAdapter curveAdapter = new CurveStableAdapter(address(phantomSwap), address(oracle), address(pool), 0, 1);
         phantomSwap.setAdapter(address(curveAdapter), true);
 
         tokenB.mint(address(pool), 1_000_000 ether);
@@ -189,6 +194,16 @@ contract PhantomSwapTest is BaseTest, CoFheTest {
         });
 
         bytes32 orderHash = phantomSwap.submitOrder(params);
+
+        oracle.submitDecryption(
+            orderHash,
+            ICurveDecryptionOracle.DecryptedOrder({
+                amountIn: amountIn,
+                minAmountOut: 190 ether,
+                slippageBps: 50,
+                deadline: params.deadline
+            })
+        );
 
         PhantomSwap.ExecutionPlan memory plan = PhantomSwap.ExecutionPlan({
             adapter: address(curveAdapter),

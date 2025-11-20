@@ -4,17 +4,12 @@ pragma solidity ^0.8.26;
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import {FHE, TASK_MANAGER_ADDRESS, euint256, euint16} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
+import {FHE, euint256} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
 
 import {IPhantomAdapter} from "../interfaces/IPhantomAdapter.sol";
 import {Order} from "../types/PhantomOrder.sol";
 import {ICurveStableSwap} from "../interfaces/ICurveStableSwap.sol";
-
-/// @title CurveStableAdapter
-/// @notice Executes swaps against a Curve stable swap pool while preserving encrypted order parameters.
-interface ITaskManagerReader {
-    function mockStorage(uint256 ctHash) external view returns (uint256);
-}
+import {ICurveDecryptionOracle} from "../interfaces/ICurveDecryptionOracle.sol";
 
 contract CurveStableAdapter is IPhantomAdapter {
     using SafeERC20 for IERC20;
@@ -22,7 +17,8 @@ contract CurveStableAdapter is IPhantomAdapter {
     error UnauthorizedCaller(address caller);
     error UnsupportedCoinIndex(uint256 index);
     error InsufficientOutput(uint256 expectedMin, uint256 actual);
-    error PlaintextNotAvailable(uint256 ctHash);
+    error DecryptionNotReady(bytes32 orderHash);
+    error DeadlineBreached(uint64 expected, uint64 provided);
 
     uint256 private constant BPS_DENOMINATOR = 10_000;
 
@@ -32,6 +28,7 @@ contract CurveStableAdapter is IPhantomAdapter {
     IERC20 public immutable tokenOut;
     int128 public immutable tokenInIndex;
     int128 public immutable tokenOutIndex;
+    ICurveDecryptionOracle public immutable oracle;
 
     mapping(address => bool) public authorizedQuoters;
 
@@ -39,14 +36,18 @@ contract CurveStableAdapter is IPhantomAdapter {
 
     constructor(
         address phantomSwap_,
+        address oracle_,
         address pool_,
         uint8 tokenInIndex_,
         uint8 tokenOutIndex_
     ) {
-        if (phantomSwap_ == address(0) || pool_ == address(0)) revert UnauthorizedCaller(address(0));
+        if (phantomSwap_ == address(0) || pool_ == address(0) || oracle_ == address(0)) {
+            revert UnauthorizedCaller(address(0));
+        }
 
         phantomSwap = phantomSwap_;
         pool = ICurveStableSwap(pool_);
+        oracle = ICurveDecryptionOracle(oracle_);
 
         address tokenInAddr = pool.coins(tokenInIndex_);
         address tokenOutAddr = pool.coins(tokenOutIndex_);
@@ -76,14 +77,16 @@ contract CurveStableAdapter is IPhantomAdapter {
     }
 
     /// @inheritdoc IPhantomAdapter
-    function requestQuote(bytes32 orderHash, Order calldata order, bytes calldata)
+    function requestQuote(bytes32 orderHash, Order calldata /*order*/, bytes calldata)
         external
         override
         onlyAuthorizedQuoter
         returns (Quote memory quote)
     {
-        uint256 amountInPlain = _readCiphertext(order.amountIn);
-        if (amountInPlain == 0) {
+        (ICurveDecryptionOracle.DecryptedOrder memory plain, bool ready) = oracle.peek(orderHash);
+        if (!ready) revert DecryptionNotReady(orderHash);
+
+        if (plain.amountIn == 0) {
             quote.routeId = keccak256(abi.encode(orderHash, address(pool)));
             quote.encryptedAmountOut = FHE.asEuint256(0);
             quote.adapterData = bytes("");
@@ -93,7 +96,7 @@ contract CurveStableAdapter is IPhantomAdapter {
             return quote;
         }
 
-        uint256 dy = pool.get_dy(tokenInIndex, tokenOutIndex, amountInPlain);
+        uint256 dy = pool.get_dy(tokenInIndex, tokenOutIndex, plain.amountIn);
 
         euint256 encryptedDy = FHE.asEuint256(dy);
         FHE.allow(encryptedDy, msg.sender);
@@ -106,15 +109,21 @@ contract CurveStableAdapter is IPhantomAdapter {
     }
 
     /// @inheritdoc IPhantomAdapter
-    function executeSwap(bytes32, Order calldata order, bytes calldata)
+    function executeSwap(bytes32 orderHash, Order calldata order, bytes calldata)
         external
         override
         onlyPhantomSwap
         returns (ExecutionResponse memory response)
     {
-        uint256 amountInPlain = _readCiphertext(order.amountIn);
-        uint256 minAmountOutPlain = _readCiphertext(order.minAmountOut);
-        uint16 slippageBps = _readCiphertext(order.slippageBps);
+        ICurveDecryptionOracle.DecryptedOrder memory plain = oracle.consume(orderHash);
+
+        if (plain.deadline != order.deadline || plain.deadline < block.timestamp) {
+            revert DeadlineBreached(order.deadline, plain.deadline);
+        }
+
+        uint256 amountInPlain = plain.amountIn;
+        uint256 minAmountOutPlain = plain.minAmountOut;
+        uint16 slippageBps = plain.slippageBps;
 
         uint256 slippageFloor = amountInPlain * (BPS_DENOMINATOR - slippageBps) / BPS_DENOMINATOR;
         uint256 minAcceptable = slippageFloor > minAmountOutPlain ? slippageFloor : minAmountOutPlain;
@@ -143,22 +152,5 @@ contract CurveStableAdapter is IPhantomAdapter {
             telemetry: abi.encode(dy, amountOutPlain)
         });
     }
-
-    function _readCiphertext(euint256 value) internal view returns (uint256) {
-        return _readMockStorage(euint256.unwrap(value));
-    }
-
-    function _readCiphertext(euint16 value) internal view returns (uint16) {
-        return uint16(_readMockStorage(euint16.unwrap(value)));
-    }
-
-    function _readMockStorage(uint256 ctHash) private view returns (uint256) {
-        try ITaskManagerReader(TASK_MANAGER_ADDRESS).mockStorage(ctHash) returns (uint256 result) {
-            return result;
-        } catch {
-            revert PlaintextNotAvailable(ctHash);
-        }
-    }
 }
-
 
