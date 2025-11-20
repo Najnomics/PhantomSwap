@@ -48,11 +48,7 @@ contract ZcashBridge is IZcashBridge, Ownable, Pausable {
     }
 
     /// @inheritdoc IZcashBridge
-    function requestSettlement(Order calldata, SettlementRequest calldata request)
-        external
-        override
-        whenNotPaused
-    {
+    function requestSettlement(Order calldata, SettlementRequest calldata request) external override whenNotPaused {
         if (_operations[request.orderHash].orderHash != 0) revert OperationAlreadyExists(request.orderHash);
 
         RelayParams memory params = _decodeRelayParams(request.relayerData);

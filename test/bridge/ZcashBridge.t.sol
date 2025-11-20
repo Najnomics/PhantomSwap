@@ -62,9 +62,7 @@ contract ZcashBridgeTest is Test, CoFheTest {
         IZcashBridge.SettlementRequest memory request = _buildRequest(5 ether, 1 hours);
         bridge.requestSettlement(dummyOrder, request);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(ZcashBridge.NotAuthorizedRelayer.selector, address(0x123))
-        );
+        vm.expectRevert(abi.encodeWithSelector(ZcashBridge.NotAuthorizedRelayer.selector, address(0x123)));
         vm.prank(address(0x123));
         bridge.confirmSettlement(request.orderHash, bytes32(uint256(0x1)));
     }
@@ -80,7 +78,10 @@ contract ZcashBridgeTest is Test, CoFheTest {
         bridge.getOperation(request.orderHash);
     }
 
-    function _buildRequest(uint256 amount, uint64 expiryDelay) internal returns (IZcashBridge.SettlementRequest memory) {
+    function _buildRequest(uint256 amount, uint64 expiryDelay)
+        internal
+        returns (IZcashBridge.SettlementRequest memory)
+    {
         InEuint256 memory cipher = createInEuint256(amount, TM_ADMIN);
         euint256 encryptedAmount = FHE.asEuint256(cipher);
 
@@ -94,9 +95,7 @@ contract ZcashBridgeTest is Test, CoFheTest {
         });
 
         return IZcashBridge.SettlementRequest({
-            orderHash: orderHash,
-            encryptedAmountOut: encryptedAmount,
-            relayerData: abi.encode(params)
+            orderHash: orderHash, encryptedAmountOut: encryptedAmount, relayerData: abi.encode(params)
         });
     }
 }

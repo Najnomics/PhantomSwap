@@ -99,8 +99,7 @@ contract RouteEngine is IRouteEngine, Ownable {
 
             FHE.allowThis(quote.encryptedAmountOut);
 
-            uint256 comparisonMetric =
-                hintScore != 0 ? hintScore : euint256.unwrap(quote.encryptedAmountOut);
+            uint256 comparisonMetric = hintScore != 0 ? hintScore : euint256.unwrap(quote.encryptedAmountOut);
 
             if (!found) {
                 selection.adapter = adapterAddr;

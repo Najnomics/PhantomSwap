@@ -123,16 +123,9 @@ contract PhantomSwapTest is BaseTest, CoFheTest {
         bytes32 orderHash = phantomSwap.submitOrder(_defaultOrderParams());
 
         RouteEngine.AdapterHint[] memory hints = new RouteEngine.AdapterHint[](2);
-        hints[0] = RouteEngine.AdapterHint({
-            adapter: address(adapter),
-            data: bytes("data-a"),
-            plaintextScore: 80 ether
-        });
-        hints[1] = RouteEngine.AdapterHint({
-            adapter: address(secondary),
-            data: bytes("data-b"),
-            plaintextScore: 120 ether
-        });
+        hints[0] = RouteEngine.AdapterHint({adapter: address(adapter), data: bytes("data-a"), plaintextScore: 80 ether});
+        hints[1] =
+            RouteEngine.AdapterHint({adapter: address(secondary), data: bytes("data-b"), plaintextScore: 120 ether});
 
         vm.prank(executor);
         euint256 amountOut = phantomSwap.executeOrder(orderHash, abi.encode(hints));
