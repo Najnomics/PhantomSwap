@@ -1,51 +1,80 @@
-PhantomSwap – Private DEX Aggregator
-Track: Private DeFi & Trading ($3,000)
-Hackathon: Zypherpunk – Zcash Privacy Hackathon
-Stack: Fhenix CoFHE · Zcash shielded pools · Uniswap V4 hooks · React/TypeScript
+<div align="center">
 
-At a Glance
-Mission: Let anyone trade across Ethereum liquidity privately, with Zcash-grade settlement guarantees and zero MEV leakage.
-Thesis: Encrypt every price-sensitive field, run routing logic with CoFHE, and settle through shielded pools so bots cannot front-run or infer strategy.
-MVP Scope: Uniswap V4 + Curve aggregation, Zcash bridge, reference frontend, full CoFheTest coverage.
-Table of Contents
-Problem
-Personas & Use-Cases
-Solution Overview
-End-to-End User Flow
-Component Topology
-Data Lifecycle & Privacy Controls
-Core Contracts
-Developer Environment
-Testing Strategy
-Roadmap
-Contribution & Governance
-Problem
+# PhantomSwap – Private DEX Aggregator
+
+**Track:** Private DeFi & Trading ($3,000)  
+**Hackathon:** Zypherpunk – Zcash Privacy Hackathon  
+**Stack:** Fhenix CoFHE · Zcash shielded pools · Uniswap V4 hooks · React/TypeScript
+
+</div>
+
+---
+
+## At a Glance
+
+- **Mission:** Let anyone trade across Ethereum liquidity privately, with Zcash-grade settlement guarantees and zero MEV leakage.  
+- **Thesis:** Encrypt every price-sensitive field, run routing logic with CoFHE, and settle through shielded pools so bots cannot front-run or infer strategy.  
+- **MVP Scope:** Uniswap V4 + Curve aggregation, Zcash bridge, reference frontend, full CoFheTest coverage.
+
+---
+
+## Table of Contents
+
+1. [Problem](#problem)  
+2. [Personas & Use-Cases](#personas--use-cases)  
+3. [Solution Overview](#solution-overview)  
+4. [End-to-End User Flow](#end-to-end-user-flow)  
+5. [Component Topology](#component-topology)  
+6. [Data Lifecycle & Privacy Controls](#data-lifecycle--privacy-controls)  
+7. [Core Contracts](#core-contracts)  
+8. [Developer Environment](#developer-environment)  
+9. [Testing Strategy](#testing-strategy)  
+10. [Roadmap](#roadmap)  
+11. [Contribution & Governance](#contribution--governance)
+
+---
+
+## Problem
+
 Public mempools broadcast price-sensitive intent:
 
-$1.2B+ MEV extracted from Ethereum users in 2024; sandwich attacks capture 40–80 bps per trade.
-70% of >$100k swaps observed by MEV searchers; whales flee to invite-only private relays.
-No tools for smaller traders to access private orderflow; strategies leak instantly to quantitatively advantaged bots.
-Pain points:
+- **$1.2B+ MEV** extracted from Ethereum users in 2024; sandwich attacks capture 40–80 bps per trade.  
+- **70% of >$100k swaps** observed by MEV searchers; whales flee to invite-only private relays.  
+- **No tools for smaller traders** to access private orderflow; strategies leak instantly to quantitatively advantaged bots.
 
-Actor	Risk Today	Business Impact
-Professional desks	Strategy reverse-engineered from public mempools	Lost alpha, market share erosion
-Retail aggregators	Cannot promise front-running protection	Customer churn to centralized exchanges
-Zcash ecosystem	Lack of privacy-preserving settlement on EVM DEXes	Locked-out liquidity + limited integrations
-Personas & Use-Cases
-Stealth Desk: Runs delta-neutral strategies and needs encrypted order submission.
-Privacy Wallet: Wants to route user swaps via API without exposing size.
-Zcash Market Maker: Prefers shielded settlement to keep book confidential.
-Institutional Custodian: Must demonstrate front-running protection for compliance.
+| Actor               | Risk Today                                       | Business Impact                             |
+|---------------------|--------------------------------------------------|---------------------------------------------|
+| Professional desks  | Strategy reverse-engineered from public mempools | Lost alpha, market share erosion            |
+| Retail aggregators  | Cannot promise front-running protection          | Customer churn to centralized exchanges     |
+| Zcash ecosystem     | Lack of privacy-preserving settlement on EVM DEXes | Locked-out liquidity + limited integrations |
+
+---
+
+## Personas & Use-Cases
+
+- **Stealth Desk:** Runs delta-neutral strategies and needs encrypted order submission.  
+- **Privacy Wallet:** Wants to route user swaps via API without exposing size.  
+- **Zcash Market Maker:** Prefers shielded settlement to keep book confidential.  
+- **Institutional Custodian:** Must demonstrate front-running protection for compliance.
+
 Each persona maps to a specific feature flag (e.g., delegated execution, API key auth, post-trade settlement reports).
 
-Solution Overview
+---
+
+## Solution Overview
+
 PhantomSwap encrypts orders end-to-end:
 
-Client Encryption: User signs and encrypts amountIn, minAmountOut, and slippage using Fhenix JS SDK.
-CoFHE Routing: PhantomSwap.sol compares quotes from multiple sources with FHE operators; no plaintext leakage.
-Execution Hooks: Selected route executes via Uniswap V4 hooks or other adapters; only required values decrypted at the millisecond of swap.
-Zcash Settlement: Output funds bridged to Zcash shielded pool using ZcashBridge.sol, keeping balances opaque.
-End-to-End User Flow
+1. **Client Encryption:** User signs and encrypts `amountIn`, `minAmountOut`, and `slippage` using Fhenix JS SDK.  
+2. **CoFHE Routing:** `PhantomSwap.sol` compares quotes from multiple sources with FHE operators; no plaintext leakage.  
+3. **Execution Hooks:** Selected route executes via Uniswap V4 hooks or other adapters; only required values decrypted at the millisecond of swap.  
+4. **Zcash Settlement:** Output funds bridged to Zcash shielded pool using `ZcashBridge.sol`, keeping balances opaque.
+
+---
+
+## End-to-End User Flow
+
+```mermaid
 sequenceDiagram
     participant Trader
     participant PhantomUI as Phantom UI
@@ -65,7 +94,13 @@ sequenceDiagram
     PhantomSwap->>Zcash: Bridge output to shielded pool
     Zcash-->>PhantomSwap: Shielded tx confirmation
     PhantomSwap-->>Trader: Emit OrderExecuted + settlement proof
-Component Topology
+```
+
+---
+
+## Component Topology
+
+```mermaid
 flowchart LR
     subgraph Client Layer
         UI[PhantomSwap Frontend]
@@ -91,6 +126,7 @@ flowchart LR
         ShieldedPool[Zcash Shielded Pool]
     end
 
+>>>>>>> 3809975 (Add CoFHE route engine and refresh README)
     UI --> SDK --> PS
     PS --> Hook
     Hook --> U4
@@ -100,6 +136,7 @@ flowchart LR
     PS --> Bridge --> Lightwalletd --> ShieldedPool
     ShieldedPool --> Bridge
     PS --> UI
+<<<<<<< HEAD
 Data Lifecycle & Privacy Controls
 Stage	Data Type	Encryption State	Notes
 Client entry	amountIn, minOut, slippage	Encrypted (Fhenix SDK)	Never sent as plaintext
@@ -182,3 +219,127 @@ Implement feature with CoFheTest coverage (test/PhantomSwap.test.ts).
 Submit PR including threat model updates + gas report.
 Governance: roadmap proposals discussed in #phantom-gov Discord channel; on-chain votes verified via encrypted participation credentials.
 Goal: Eliminate MEV exposure for Zcash-connected traders by encrypting every step from quote discovery to settlement.***
+=======
+```
+
+---
+
+## Data Lifecycle & Privacy Controls
+
+| Stage          | Data Type                  | Encryption State             | Notes                                           |
+|----------------|----------------------------|------------------------------|-------------------------------------------------|
+| Client entry   | `amountIn`, `minOut`, `slippage` | Encrypted (Fhenix SDK)        | Never sent as plaintext                         |
+| Order book     | Ciphertext blobs           | Stored encrypted             | Indexed by hash; no balances exposed            |
+| Route selection| Quote comparisons          | Homomorphic operations       | FHE `gt`, `select` used across routes           |
+| Swap execution | `amountIn`                 | Decrypted momentarily        | Happens inside hook call; re-encrypted post swap|
+| Settlement proof| Zcash tx hash, note commitment | Public hash, private amounts | Hash stored on-chain, amounts hidden in shielded pool |
+
+Additional safeguards:
+
+- **Time-based cloaking:** Orders batched with randomized delays to minimize timing oracle hints.  
+- **Noise injection:** Optional volume padding for VIP orderflow.  
+- **Audit hooks:** Encrypted logs exported via CoFheTest for compliance teams.
+
+---
+
+## Core Contracts
+
+```solidity
+// Submit encrypted order
+function submitOrder(
+    address tokenIn,
+    address tokenOut,
+    InEuint256 calldata encryptedAmount,
+    InEuint256 calldata encryptedMinOut,
+    InEuint16 calldata encryptedSlippageBps,
+    uint64 deadline,
+    bytes32 salt,
+    bytes calldata metadata
+) external returns (bytes32 orderHash);
+
+// Execute optimal route computed with CoFHE
+function executeOrder(bytes32 orderHash, bytes calldata executionPayload) external;
+
+// Internal bridge logic to settle into Zcash shielded pool
+function requestSettlement(
+    Order calldata order,
+    SettlementRequest calldata request
+) external;
+```
+
+FHE execution steps:
+
+1. `submitOrder` uses `FHE.asEuint*` helpers from CoFHE to persist ciphertexts.  
+2. `RouteEngine.selectBestRoute` loops through registered liquidity adapters, comparing encrypted quotes (`gt`, `select`).  
+3. Control flow decrypts boolean guards only; numeric values stay encrypted.  
+4. `ZcashBridge.requestSettlement` decrypts output amount once, triggers bridge transfer, and emits `OrderSettled`.
+
+---
+
+## Developer Environment
+
+```bash
+# Install dependencies
+node >= 20
+npm install
+npm install
+
+# Foundry toolchain
+foundryup
+forge install
+forge build
+forge test
+
+# Launch local anvil fork + UI
+anvil --fork-url $FHENIX_RPC_URL --chain-id $FHENIX_CHAIN_ID &
+npm run dev:stack
+```
+
+`.env` template:
+
+```ini
+FHENIX_RPC_URL=https://api.testnet.fhenix.zone:7747
+FHENIX_CHAIN_ID=8008135
+PHANTOMSWAP_ADDRESS=
+PHANTOM_HOOK_ADDRESS=
+ZCASH_BRIDGE_ADDRESS=
+FHENIX_PRIVATE_KEY=
+ZCASH_RPC_URL=
+ZCASH_RPC_USER=
+ZCASH_RPC_PASSWORD=
+```
+
+---
+
+## Testing Strategy
+
+- **CoFheTest unit harness:** Generates deterministic encrypted fixtures and validates order submission, FHE comparisons, and permissioned execution paths.  
+- **Integration stage:** Foundry Anvil fork with Uniswap V4 sandbox, verifying gas, slippage, and DeFi adapter compatibility.  
+- **Settlement stage:** Lightwalletd docker harness to simulate shielded transfers, including failure cases (timeouts, insufficient confirmations).  
+- **Performance profiling:** Bench route selection with 3/5/10 sources to keep block execution under 4M gas.
+
+---
+
+## Roadmap
+
+| Phase          | Highlights                                                   |
+|----------------|--------------------------------------------------------------|
+| Hackathon MVP  | Single-route aggregation, manual settlement trigger, proof-of-concept frontend |
+| Q1 2026        | Multi-venue support (Curve, Balancer), partner wallet SDK, streaming API |
+| Q2 2026        | Security audit, MEV insurance pool, delegated access control |
+| Beyond         | Mobile app, institutional dashboard, cross-chain settlement adapters |
+
+**KPIs:** average slippage reduction vs public swaps, time-to-settlement, VIP order volume.
+
+---
+
+## Contribution & Governance
+
+1. Fork and branch `feature/<name>`.  
+2. Implement feature with CoFheTest coverage (`test/core/PhantomSwap.t.sol`).  
+3. Submit PR including threat model updates + gas report.  
+4. Governance: roadmap proposals discussed in `#phantom-gov` Discord channel; on-chain votes verified via encrypted participation credentials.
+
+---
+
+**Goal:** Eliminate MEV exposure for Zcash-connected traders by encrypting every step from quote discovery to settlement.
