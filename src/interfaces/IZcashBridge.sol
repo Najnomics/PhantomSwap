@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {euint256} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
+
 import {Order} from "../types/PhantomOrder.sol";
 
 interface IZcashBridge {
     struct SettlementRequest {
         bytes32 orderHash;
-        bytes encryptedAmountOut;
+        euint256 encryptedAmountOut;
         bytes relayerData;
     }
 

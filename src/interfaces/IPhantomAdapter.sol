@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {euint256} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
+
 import {Order} from "../types/PhantomOrder.sol";
 
 interface IPhantomAdapter {
     struct Quote {
         bytes32 routeId;
-        bytes encryptedAmountOut;
+        euint256 encryptedAmountOut;
         bytes adapterData;
     }
 
     struct ExecutionResponse {
-        bytes encryptedAmountOut;
+        euint256 encryptedAmountOut;
         bytes settlementData;
         bytes telemetry; // optional analytics payload.
     }

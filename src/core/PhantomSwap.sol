@@ -4,8 +4,11 @@ pragma solidity ^0.8.26;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+import {euint256} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
+
 import {OrderStatus, OrderParams, Order} from "../types/PhantomOrder.sol";
 import {OrderLib} from "../libraries/OrderLib.sol";
+import {OrderPermissions} from "../fhe/OrderPermissions.sol";
 import {IPhantomAdapter} from "../interfaces/IPhantomAdapter.sol";
 import {IRouteEngine} from "../interfaces/IRouteEngine.sol";
 import {IZcashBridge} from "../interfaces/IZcashBridge.sol";
@@ -21,7 +24,7 @@ contract PhantomSwap is Ownable, ReentrancyGuard {
         bytes adapterData;
         bytes settlementData;
         bytes32 routeId;
-        bytes encryptedQuote; // ciphertext chosen via CoFHE.
+        euint256 encryptedQuote; // ciphertext chosen via CoFHE.
     }
 
     /// @notice Custom errors.
@@ -46,7 +49,7 @@ contract PhantomSwap is Ownable, ReentrancyGuard {
         address indexed executor,
         address indexed adapter,
         bytes32 routeId,
-        bytes encryptedAmountOut
+        uint256 encryptedAmountOut
     );
 
     /// @notice Emitted when an order is cancelled.
@@ -89,6 +92,7 @@ contract PhantomSwap is Ownable, ReentrancyGuard {
         if (existing.status != OrderStatus.None) revert OrderAlreadyExists(orderHash);
 
         Order memory orderData = params.toOrder(msg.sender);
+        OrderPermissions.grantOnSubmission(orderData, msg.sender);
         _orders[orderHash] = orderData;
 
         emit OrderSubmitted(orderHash, msg.sender, params.tokenIn, params.tokenOut, params.deadline);
@@ -98,7 +102,7 @@ contract PhantomSwap is Ownable, ReentrancyGuard {
         external
         nonReentrant
         onlyExecutor
-        returns (bytes memory encryptedAmountOut)
+        returns (euint256 encryptedAmountOut)
     {
         Order storage orderSlot = _orders[orderHash];
         if (orderSlot.status == OrderStatus.None) revert OrderNotFound(orderHash);
@@ -110,6 +114,8 @@ contract PhantomSwap is Ownable, ReentrancyGuard {
 
         if (!adapters[plan.adapter]) revert AdapterNotAllowed(plan.adapter);
 
+        OrderPermissions.grantForExecution(orderSlot, msg.sender, plan.adapter);
+
         IPhantomAdapter.ExecutionResponse memory response =
             IPhantomAdapter(plan.adapter).executeSwap(orderHash, orderMem, plan.adapterData);
 
@@ -117,12 +123,14 @@ contract PhantomSwap is Ownable, ReentrancyGuard {
 
         encryptedAmountOut = response.encryptedAmountOut;
 
-        emit OrderExecuted(orderHash, msg.sender, plan.adapter, plan.routeId, encryptedAmountOut);
+        emit OrderExecuted(orderHash, msg.sender, plan.adapter, plan.routeId, euint256.unwrap(encryptedAmountOut));
 
         bytes memory settlementBlob =
             response.settlementData.length != 0 ? response.settlementData : plan.settlementData;
 
-        if (address(zcashBridge) != address(0) && encryptedAmountOut.length != 0 && settlementBlob.length != 0) {
+        if (
+            address(zcashBridge) != address(0) && euint256.unwrap(encryptedAmountOut) != 0 && settlementBlob.length != 0
+        ) {
             IZcashBridge.SettlementRequest memory request = IZcashBridge.SettlementRequest({
                 orderHash: orderHash, encryptedAmountOut: encryptedAmountOut, relayerData: settlementBlob
             });
@@ -205,7 +213,9 @@ contract PhantomSwap is Ownable, ReentrancyGuard {
             plan.adapterData = selection.adapterData.length != 0 ? selection.adapterData : selection.quote.adapterData;
             plan.settlementData = selection.settlementData;
             plan.routeId = selection.quote.routeId;
-            plan.encryptedQuote = selection.quote.encryptedAmountOut;
+            plan.encryptedQuote = euint256.unwrap(selection.encryptedQuote) != 0
+                ? selection.encryptedQuote
+                : selection.quote.encryptedAmountOut;
         } else {
             plan = abi.decode(executionPayload, (ExecutionPlan));
         }
@@ -216,19 +226,14 @@ contract PhantomSwap is Ownable, ReentrancyGuard {
             owner: orderSlot.owner,
             tokenIn: orderSlot.tokenIn,
             tokenOut: orderSlot.tokenOut,
-            amountIn: new bytes(0),
-            minAmountOut: new bytes(0),
-            slippageBps: new bytes(0),
+            amountIn: orderSlot.amountIn,
+            minAmountOut: orderSlot.minAmountOut,
+            slippageBps: orderSlot.slippageBps,
             deadline: orderSlot.deadline,
             salt: orderSlot.salt,
-            metadata: new bytes(0),
+            metadata: orderSlot.metadata,
             status: orderSlot.status
         });
-
-        order.amountIn = orderSlot.amountIn;
-        order.minAmountOut = orderSlot.minAmountOut;
-        order.slippageBps = orderSlot.slippageBps;
-        order.metadata = orderSlot.metadata;
     }
 }
 

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {euint256} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
+
 import {Order} from "../types/PhantomOrder.sol";
 import {IPhantomAdapter} from "./IPhantomAdapter.sol";
 
@@ -10,6 +12,7 @@ interface IRouteEngine {
         IPhantomAdapter.Quote quote;
         bytes adapterData;
         bytes settlementData;
+        euint256 encryptedQuote;
     }
 
     /// @notice Performs CoFHE-based route selection and returns the winning adapter details.
