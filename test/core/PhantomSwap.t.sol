@@ -10,6 +10,7 @@ import {RouteEngine} from "../../src/fhe/RouteEngine.sol";
 import {OrderParams, OrderStatus, Order} from "../../src/types/PhantomOrder.sol";
 import {IPhantomAdapter} from "../../src/interfaces/IPhantomAdapter.sol";
 import {IZcashBridge} from "../../src/interfaces/IZcashBridge.sol";
+import {IPhantomHook} from "../../src/interfaces/IPhantomHook.sol";
 
 contract PhantomSwapTest is BaseTest, CoFheTest {
     PhantomSwap internal phantomSwap;
@@ -140,6 +141,20 @@ contract PhantomSwapTest is BaseTest, CoFheTest {
         );
     }
 
+    function testSetAdapterPropagatesToHook() public {
+        MockHook hook = new MockHook(address(phantomSwap));
+        phantomSwap.setPhantomHook(hook);
+
+        phantomSwap.setAdapter(address(adapter), true);
+        assertEq(hook.lastSender(), address(adapter));
+        assertTrue(hook.lastAllowed());
+        assertEq(hook.callCount(), 1);
+
+        phantomSwap.setAdapter(address(adapter), false);
+        assertEq(hook.callCount(), 2);
+        assertFalse(hook.lastAllowed());
+    }
+
     function _defaultOrderParams() internal returns (OrderParams memory params) {
         params = OrderParams({
             tokenIn: address(0x1111),
@@ -256,6 +271,38 @@ contract MockZcashBridge is IZcashBridge {
 
     function lastEncryptedAmount() external view returns (euint256) {
         return _amount;
+    }
+}
+
+contract MockHook is IPhantomHook {
+    address public immutable phantomSwap;
+    address private _lastSender;
+    bool private _lastAllowed;
+    uint256 private _callCount;
+
+    constructor(address phantomSwap_) {
+        phantomSwap = phantomSwap_;
+    }
+
+    function updateAuthorizedSender(address sender, bool allowed) external override {
+        require(msg.sender == phantomSwap, "not phantom swap");
+        _lastSender = sender;
+        _lastAllowed = allowed;
+        unchecked {
+            ++_callCount;
+        }
+    }
+
+    function lastSender() external view returns (address) {
+        return _lastSender;
+    }
+
+    function lastAllowed() external view returns (bool) {
+        return _lastAllowed;
+    }
+
+    function callCount() external view returns (uint256) {
+        return _callCount;
     }
 }
 

@@ -27,9 +27,11 @@ contract PhantomHook is BaseHook {
     error MinOutputNotSatisfied(uint256 expected, uint256 actual);
     error SlippageExceeded(uint256 amountIn, uint256 amountOut, uint16 slippageBps);
     error UnknownOrder(bytes32 orderHash);
+    error CannotRevokePhantomSwap();
 
     event SwapScheduled(bytes32 indexed orderHash, address indexed payer, uint256 amountIn, uint256 minAmountOut);
     event SwapFinalized(bytes32 indexed orderHash, uint256 amountIn, uint256 amountOut);
+    event AuthorizedSenderUpdated(address indexed sender, bool allowed);
 
     struct PendingSwap {
         uint256 amountIn;
@@ -43,10 +45,17 @@ contract PhantomHook is BaseHook {
     }
 
     mapping(bytes32 => PendingSwap) private _pendingSwaps;
+    mapping(address => bool) private _authorizedSenders;
+
+    modifier onlyPhantomSwap() {
+        if (msg.sender != phantomSwap) revert UnauthorizedSender(msg.sender);
+        _;
+    }
 
     constructor(IPoolManager poolManager_, address phantomSwap_) BaseHook(poolManager_) {
         if (phantomSwap_ == address(0)) revert InvalidAddress();
         phantomSwap = phantomSwap_;
+        _authorizedSenders[phantomSwap_] = true;
     }
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
@@ -73,7 +82,7 @@ contract PhantomHook is BaseHook {
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        if (sender != phantomSwap) revert UnauthorizedSender(sender);
+        if (!_authorizedSenders[sender]) revert UnauthorizedSender(sender);
 
         SwapContext memory ctx = _decodeContext(hookData);
 
@@ -112,7 +121,7 @@ contract PhantomHook is BaseHook {
         BalanceDelta delta,
         bytes calldata hookData
     ) internal override returns (bytes4, int128) {
-        if (sender != phantomSwap) revert UnauthorizedSender(sender);
+        if (!_authorizedSenders[sender]) revert UnauthorizedSender(sender);
 
         SwapContext memory ctx = _decodeContext(hookData);
         PendingSwap storage pending = _pendingSwaps[ctx.orderHash];
@@ -152,7 +161,7 @@ contract PhantomHook is BaseHook {
         override
         returns (bytes4)
     {
-        if (sender != phantomSwap) revert UnauthorizedSender(sender);
+        if (!_authorizedSenders[sender]) revert UnauthorizedSender(sender);
         return BaseHook.beforeAddLiquidity.selector;
     }
 
@@ -162,12 +171,23 @@ contract PhantomHook is BaseHook {
         override
         returns (bytes4)
     {
-        if (sender != phantomSwap) revert UnauthorizedSender(sender);
+        if (!_authorizedSenders[sender]) revert UnauthorizedSender(sender);
         return BaseHook.beforeRemoveLiquidity.selector;
     }
 
     function getPendingSwap(bytes32 orderHash) external view returns (PendingSwap memory) {
         return _pendingSwaps[orderHash];
+    }
+
+    function updateAuthorizedSender(address sender, bool allowed) external onlyPhantomSwap {
+        if (sender == address(0)) revert InvalidAddress();
+        if (sender == phantomSwap && !allowed) revert CannotRevokePhantomSwap();
+        _authorizedSenders[sender] = allowed;
+        emit AuthorizedSenderUpdated(sender, allowed);
+    }
+
+    function isAuthorizedSender(address sender) external view returns (bool) {
+        return _authorizedSenders[sender];
     }
 
     function _decodeContext(bytes calldata hookData) internal pure returns (SwapContext memory ctx) {

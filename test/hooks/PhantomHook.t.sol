@@ -138,6 +138,36 @@ contract PhantomHookTest is Test {
         hook.callBeforeSwap(phantomSwap, key, params, hookData);
     }
 
+    function testAuthorizedAdapterCanInvokeOnceGranted() public {
+        address adapter = address(0xADAD);
+        hook.updateAuthorizedSender(adapter, true);
+
+        SwapContext memory ctx = _defaultContext();
+        SwapParams memory params = _defaultParams(int256(ctx.amountIn), true);
+        bytes memory hookData = abi.encode(ctx);
+        PoolKey memory key = _poolKey(address(hook));
+
+        (bytes4 selector,,) = hook.callBeforeSwap(adapter, key, params, hookData);
+        assertEq(selector, BaseHook.beforeSwap.selector, "selector");
+
+        hook.callAfterSwap(
+            adapter,
+            key,
+            params,
+            toBalanceDelta(-int128(int256(ctx.amountIn)), int128(int256(ctx.amountIn))),
+            hookData
+        );
+
+        hook.updateAuthorizedSender(adapter, false);
+        vm.expectRevert(abi.encodeWithSelector(PhantomHook.UnauthorizedSender.selector, adapter));
+        hook.callBeforeSwap(adapter, key, params, hookData);
+    }
+
+    function testCannotRevokePhantomSwapAuthorization() public {
+        vm.expectRevert(PhantomHook.CannotRevokePhantomSwap.selector);
+        hook.updateAuthorizedSender(phantomSwap, false);
+    }
+
     function _defaultContext() internal view returns (SwapContext memory ctx) {
         ctx = SwapContext({
             orderHash: keccak256(abi.encodePacked(block.number, address(this))),

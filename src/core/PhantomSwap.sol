@@ -12,6 +12,7 @@ import {OrderPermissions} from "../fhe/OrderPermissions.sol";
 import {IPhantomAdapter} from "../interfaces/IPhantomAdapter.sol";
 import {IRouteEngine} from "../interfaces/IRouteEngine.sol";
 import {IZcashBridge} from "../interfaces/IZcashBridge.sol";
+import {IPhantomHook} from "../interfaces/IPhantomHook.sol";
 
 /// @title PhantomSwap
 /// @notice Core coordinator for encrypted swap orders leveraging Fhenix CoFHE and Zcash settlement.
@@ -63,6 +64,7 @@ contract PhantomSwap is Ownable, ReentrancyGuard {
     event AdapterUpdated(address indexed adapter, bool allowed);
     event RouteEngineUpdated(address indexed routeEngine);
     event ZcashBridgeUpdated(address indexed bridge);
+    event PhantomHookUpdated(address indexed hook);
 
     mapping(bytes32 => Order) private _orders;
     mapping(address => bool) public executors;
@@ -70,6 +72,7 @@ contract PhantomSwap is Ownable, ReentrancyGuard {
 
     IRouteEngine public routeEngine;
     IZcashBridge public zcashBridge;
+    IPhantomHook public phantomHook;
 
     modifier onlyExecutor() {
         if (!executors[msg.sender]) revert UnauthorizedExecutor(msg.sender);
@@ -170,6 +173,9 @@ contract PhantomSwap is Ownable, ReentrancyGuard {
     function setAdapter(address adapter, bool allowed) external onlyOwner {
         if (adapter == address(0)) revert InvalidAddress();
         adapters[adapter] = allowed;
+        if (address(phantomHook) != address(0)) {
+            phantomHook.updateAuthorizedSender(adapter, allowed);
+        }
         emit AdapterUpdated(adapter, allowed);
     }
 
@@ -181,6 +187,11 @@ contract PhantomSwap is Ownable, ReentrancyGuard {
     function setZcashBridge(IZcashBridge newBridge) external onlyOwner {
         zcashBridge = newBridge;
         emit ZcashBridgeUpdated(address(newBridge));
+    }
+
+    function setPhantomHook(IPhantomHook newHook) external onlyOwner {
+        phantomHook = newHook;
+        emit PhantomHookUpdated(address(newHook));
     }
 
     // ---------------------------------------------------------------------
