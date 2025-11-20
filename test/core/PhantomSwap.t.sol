@@ -7,6 +7,9 @@ import {FHE, InEuint256, InEuint16, euint256, euint16} from "@fhenixprotocol/cof
 
 import {PhantomSwap} from "../../src/core/PhantomSwap.sol";
 import {RouteEngine} from "../../src/fhe/RouteEngine.sol";
+import {CurveStableAdapter} from "../../src/adapters/CurveStableAdapter.sol";
+import {MockCurvePool} from "../mocks/curve/MockCurvePool.sol";
+import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
 import {OrderParams, OrderStatus, Order} from "../../src/types/PhantomOrder.sol";
 import {IPhantomAdapter} from "../../src/interfaces/IPhantomAdapter.sol";
 import {IZcashBridge} from "../../src/interfaces/IZcashBridge.sol";
@@ -153,6 +156,54 @@ contract PhantomSwapTest is BaseTest, CoFheTest {
         phantomSwap.setAdapter(address(adapter), false);
         assertEq(hook.callCount(), 2);
         assertFalse(hook.lastAllowed());
+    }
+
+    function testExecuteOrderWithCurveAdapter() public {
+        MockERC20 tokenA = new MockERC20("TokenA", "TKA", 18);
+        MockERC20 tokenB = new MockERC20("TokenB", "TKB", 18);
+
+        MockCurvePool pool = new MockCurvePool(address(tokenA), address(tokenB));
+        pool.setRate(1_050_000_000_000_000_000); // 1.05x
+
+        CurveStableAdapter curveAdapter = new CurveStableAdapter(address(phantomSwap), address(pool), 0, 1);
+        phantomSwap.setAdapter(address(curveAdapter), true);
+
+        tokenB.mint(address(pool), 1_000_000 ether);
+
+        uint256 amountIn = 200 ether;
+        tokenA.mint(address(this), amountIn);
+        tokenA.transfer(address(phantomSwap), amountIn);
+
+        vm.prank(address(phantomSwap));
+        tokenA.approve(address(curveAdapter), type(uint256).max);
+
+        OrderParams memory params = OrderParams({
+            tokenIn: address(tokenA),
+            tokenOut: address(tokenB),
+            amountIn: createInEuint256(amountIn, address(phantomSwap)),
+            minAmountOut: createInEuint256(190 ether, address(phantomSwap)),
+            slippageBps: createInEuint16(50, address(phantomSwap)),
+            deadline: uint64(block.timestamp + 1 hours),
+            salt: bytes32("curve"),
+            metadata: bytes("curve")
+        });
+
+        bytes32 orderHash = phantomSwap.submitOrder(params);
+
+        PhantomSwap.ExecutionPlan memory plan = PhantomSwap.ExecutionPlan({
+            adapter: address(curveAdapter),
+            adapterData: bytes(""),
+            settlementData: bytes(""),
+            routeId: bytes32("curve"),
+            encryptedQuote: FHE.asEuint256(createInEuint256(210 ether, address(phantomSwap)))
+        });
+
+        vm.prank(executor);
+        phantomSwap.executeOrder(orderHash, abi.encode(plan));
+
+        assertEq(uint8(phantomSwap.getOrderStatus(orderHash)), uint8(OrderStatus.Executed));
+        assertEq(tokenA.balanceOf(address(phantomSwap)), 0);
+        assertEq(tokenB.balanceOf(address(phantomSwap)), 210 ether);
     }
 
     function _defaultOrderParams() internal returns (OrderParams memory params) {
