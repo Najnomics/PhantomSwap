@@ -247,6 +247,8 @@ contract MockZcashBridge is IZcashBridge {
         return false;
     }
 
+    function confirmSettlement(bytes32, bytes32) external override {}
+
     function lastCalled() external view returns (bool) {
         return _called;
     }
