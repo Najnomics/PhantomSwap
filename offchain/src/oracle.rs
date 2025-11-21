@@ -9,11 +9,7 @@ use std::sync::Arc;
 
 abigen!(
     CurveOracleContract,
-    r#"[
-        function submitDecryption(bytes32 orderHash, tuple(uint256 amountIn, uint256 minAmountOut, uint16 slippageBps, uint64 deadline) data) external,
-        event OrderSubmitted(bytes32 indexed orderHash),
-        event OrderConsumed(bytes32 indexed orderHash)
-    ]"#
+    r#"[{"type":"function","name":"submitDecryption","inputs":[{"name":"orderHash","type":"bytes32","internalType":"bytes32"},{"name":"data","type":"tuple","internalType":"struct ICurveDecryptionOracle.DecryptedOrder","components":[{"name":"amountIn","type":"uint256","internalType":"uint256"},{"name":"minAmountOut","type":"uint256","internalType":"uint256"},{"name":"slippageBps","type":"uint16","internalType":"uint16"},{"name":"deadline","type":"uint64","internalType":"uint64"}]}],"outputs":[],"stateMutability":"nonpayable"}]"#
 );
 
 pub struct OracleClient<M> {
