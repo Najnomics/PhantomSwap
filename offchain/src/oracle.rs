@@ -10,70 +10,9 @@ use std::sync::Arc;
 abigen!(
     CurveOracleContract,
     r#"[
-        {
-            "type": "function",
-            "name": "submitDecryption",
-            "inputs": [
-                {
-                    "name": "orderHash",
-                    "type": "bytes32",
-                    "internalType": "bytes32"
-                },
-                {
-                    "name": "data",
-                    "type": "tuple",
-                    "internalType": "struct ICurveDecryptionOracle.DecryptedOrder",
-                    "components": [
-                        {
-                            "name": "amountIn",
-                            "type": "uint256",
-                            "internalType": "uint256"
-                        },
-                        {
-                            "name": "minAmountOut",
-                            "type": "uint256",
-                            "internalType": "uint256"
-                        },
-                        {
-                            "name": "slippageBps",
-                            "type": "uint16",
-                            "internalType": "uint16"
-                        },
-                        {
-                            "name": "deadline",
-                            "type": "uint64",
-                            "internalType": "uint64"
-                        }
-                    ]
-                }
-            ],
-            "outputs": [],
-            "stateMutability": "nonpayable"
-        },
-        {
-            "type": "event",
-            "name": "OrderSubmitted",
-            "inputs": [
-                {
-                    "name": "orderHash",
-                    "type": "bytes32",
-                    "indexed": true,
-                    "internalType": "bytes32"
-                }
-            ]
-        },
-        {
-            "type": "event",
-            "name": "OrderConsumed",
-            "inputs": [
-                {
-                    "name": "orderHash",
-                    "type": "bytes32",
-                    "indexed": true,
-                    "internalType": "bytes32"
-                }
-            ]
-        }
+        function submitDecryption(bytes32 orderHash, tuple(uint256 amountIn, uint256 minAmountOut, uint16 slippageBps, uint64 deadline) data) external,
+        event OrderSubmitted(bytes32 indexed orderHash),
+        event OrderConsumed(bytes32 indexed orderHash)
     ]"#
 );
 
@@ -108,9 +47,12 @@ impl OracleClient<Arc<SignerMiddleware<Provider<Http>, LocalWallet>>> {
     }
 }
 
-impl From<PlaintextOrder> for DecryptedOrder {
+// The abigen macro generates a struct for the tuple parameter
+// The name is typically based on the function and parameter name
+// For submitDecryption(bytes32, tuple(...) data), it generates SubmitDecryptionData
+impl From<PlaintextOrder> for SubmitDecryptionData {
     fn from(order: PlaintextOrder) -> Self {
-        DecryptedOrder {
+        SubmitDecryptionData {
             amount_in: order.amount_in,
             min_amount_out: order.min_amount_out,
             slippage_bps: order.slippage_bps,
